@@ -18,7 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-
+#include "math.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #define IC_BUFFER_SIZE 20
@@ -49,7 +49,11 @@ UART_HandleTypeDef huart2;
 uint32_t InputCaptureBuffer[IC_BUFFER_SIZE];
 float averageRisingedgePeriod;
 float MotorReadRPM;
-uint32_t MotorSetDuty = 1000;
+float MotorSetRPM;
+float ControlRPM;
+float MotorSetDuty = 100;
+int MotorControlEnable = 0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -61,6 +65,7 @@ static void MX_TIM2_Init(void);
 static void MX_TIM1_Init(void);
 /* USER CODE BEGIN PFP */
 float IC_Calc_Period();
+float PI_Control();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -118,10 +123,15 @@ int main(void)
 	  static uint32_t timestamp = 0;
 	  if(HAL_GetTick()>=timestamp)
 	  {
-		  timestamp = HAL_GetTick()+500;
+		  timestamp = HAL_GetTick()+10;
 		  averageRisingedgePeriod = IC_Calc_Period();
 		  MotorReadRPM = (60*1000000)/(averageRisingedgePeriod*64*12);
-		  __HAL_TIM_SET_COMPARE(&htim1,TIM_CHANNEL_1,MotorSetDuty);
+		  if(MotorControlEnable == 1)
+		  {
+			  ControlRPM = PI_Control();
+			  __HAL_TIM_SET_COMPARE(&htim1,TIM_CHANNEL_1,ControlRPM*10);
+		  }
+		  else __HAL_TIM_SET_COMPARE(&htim1,TIM_CHANNEL_1,MotorSetDuty*10);
 	  }
 
   }
@@ -394,7 +404,7 @@ float IC_Calc_Period()
 {
 	uint32_t currentDMAPointer = IC_BUFFER_SIZE - __HAL_DMA_GET_COUNTER((htim2.hdma[1]));
 	uint32_t lastVaildDMAPointer = (currentDMAPointer-1 + IC_BUFFER_SIZE) % IC_BUFFER_SIZE;
-	uint32_t i = (lastVaildDMAPointer + IC_BUFFER_SIZE - 19) % IC_BUFFER_SIZE;
+	uint32_t i = (lastVaildDMAPointer + IC_BUFFER_SIZE - 12) % IC_BUFFER_SIZE;
 	int32_t sumdiff = 0;
 	while(i!=lastVaildDMAPointer)
 	{
@@ -403,8 +413,23 @@ float IC_Calc_Period()
 		sumdiff += NextCapture - firstCapture;
 		i = (i+1) % IC_BUFFER_SIZE;
 	}
-	return sumdiff / 19.0;
+	return sumdiff / 12.0;
 }
+float PI_Control()
+{
+	/*P Variable*/
+	float kp = 27;
+	//100-((MotorSetRPM*100)/(MotorSetRPM+3))
+	float e = fabs(MotorSetRPM - MotorReadRPM);
+	/*I Variable*/
+	/*Output Variable*/
+	float y;
+	/*PI Control*/
+	y = kp*e;
+	if(y>100){y=100;}
+	return y;
+}
+
 /* USER CODE END 4 */
 
 /**
