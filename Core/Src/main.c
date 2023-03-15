@@ -53,7 +53,9 @@ float MotorSetRPM;
 float ControlRPM;
 float MotorSetDuty = 100;
 int MotorControlEnable = 0;
-
+float kp = 8;
+float ki = 1;
+float vout = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -129,9 +131,9 @@ int main(void)
 		  if(MotorControlEnable == 1)
 		  {
 			  ControlRPM = PI_Control();
-			  __HAL_TIM_SET_COMPARE(&htim1,TIM_CHANNEL_1,ControlRPM*10);
+			  __HAL_TIM_SET_COMPARE(&htim1,TIM_CHANNEL_1,ControlRPM*2);
 		  }
-		  else __HAL_TIM_SET_COMPARE(&htim1,TIM_CHANNEL_1,MotorSetDuty*10);
+		  else __HAL_TIM_SET_COMPARE(&htim1,TIM_CHANNEL_1,MotorSetDuty*2);
 	  }
 
   }
@@ -207,7 +209,7 @@ static void MX_TIM1_Init(void)
   htim1.Instance = TIM1;
   htim1.Init.Prescaler = 83;
   htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim1.Init.Period = 999;
+  htim1.Init.Period = 199;
   htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim1.Init.RepetitionCounter = 0;
   htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
@@ -231,7 +233,7 @@ static void MX_TIM1_Init(void)
     Error_Handler();
   }
   sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 1000;
+  sConfigOC.Pulse = 200;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
@@ -306,7 +308,7 @@ static void MX_TIM2_Init(void)
   sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_RISING;
   sConfigIC.ICSelection = TIM_ICSELECTION_DIRECTTI;
   sConfigIC.ICPrescaler = TIM_ICPSC_DIV1;
-  sConfigIC.ICFilter = 0;
+  sConfigIC.ICFilter = 7;
   if (HAL_TIM_IC_ConfigChannel(&htim2, &sConfigIC, TIM_CHANNEL_1) != HAL_OK)
   {
     Error_Handler();
@@ -418,14 +420,16 @@ float IC_Calc_Period()
 float PI_Control()
 {
 	/*P Variable*/
-	float kp = 27;
 	//100-((MotorSetRPM*100)/(MotorSetRPM+3))
-	float e = fabs(MotorSetRPM - MotorReadRPM);
+	float e = MotorSetRPM - MotorReadRPM;
 	/*I Variable*/
+	float eintegral = 0;
+	eintegral += e*0.00000001;
 	/*Output Variable*/
 	float y;
 	/*PI Control*/
-	y = kp*e;
+	vout = kp*e+ki*eintegral;
+	y = (vout*100)/22.5;
 	if(y>100){y=100;}
 	return y;
 }
