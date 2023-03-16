@@ -18,7 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "math.h"
+
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #define IC_BUFFER_SIZE 20
@@ -49,11 +49,11 @@ UART_HandleTypeDef huart2;
 uint32_t InputCaptureBuffer[IC_BUFFER_SIZE];
 float averageRisingedgePeriod;
 float MotorReadRPM;
-float MotorSetRPM;
+int MotorSetRPM;
 float ControlRPM;
 float MotorSetDuty = 100;
 int MotorControlEnable = 0;
-float kp = 8;
+float kp = 7;
 float ki = 1;
 float vout = 0;
 /* USER CODE END PV */
@@ -125,12 +125,13 @@ int main(void)
 	  static uint32_t timestamp = 0;
 	  if(HAL_GetTick()>=timestamp)
 	  {
-		  timestamp = HAL_GetTick()+10;
+		  timestamp = HAL_GetTick()+10; // 1ms = 1000Hz
 		  averageRisingedgePeriod = IC_Calc_Period();
 		  MotorReadRPM = (60*1000000)/(averageRisingedgePeriod*64*12);
 		  if(MotorControlEnable == 1)
 		  {
 			  ControlRPM = PI_Control();
+			  //*2 -> Counter Period = 200 -> Make it can config with range 0%->100%
 			  __HAL_TIM_SET_COMPARE(&htim1,TIM_CHANNEL_1,ControlRPM*2);
 		  }
 		  else __HAL_TIM_SET_COMPARE(&htim1,TIM_CHANNEL_1,MotorSetDuty*2);
@@ -308,7 +309,7 @@ static void MX_TIM2_Init(void)
   sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_RISING;
   sConfigIC.ICSelection = TIM_ICSELECTION_DIRECTTI;
   sConfigIC.ICPrescaler = TIM_ICPSC_DIV1;
-  sConfigIC.ICFilter = 7;
+  sConfigIC.ICFilter = 0;
   if (HAL_TIM_IC_ConfigChannel(&htim2, &sConfigIC, TIM_CHANNEL_1) != HAL_OK)
   {
     Error_Handler();
@@ -404,8 +405,11 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 float IC_Calc_Period()
 {
+	//Check current positon in DMA by buffer size - current remain size of DMA
 	uint32_t currentDMAPointer = IC_BUFFER_SIZE - __HAL_DMA_GET_COUNTER((htim2.hdma[1]));
+	//Last position
 	uint32_t lastVaildDMAPointer = (currentDMAPointer-1 + IC_BUFFER_SIZE) % IC_BUFFER_SIZE;
+	//Check current position in sumdiff data
 	uint32_t i = (lastVaildDMAPointer + IC_BUFFER_SIZE - 12) % IC_BUFFER_SIZE;
 	int32_t sumdiff = 0;
 	while(i!=lastVaildDMAPointer)
@@ -417,20 +421,25 @@ float IC_Calc_Period()
 	}
 	return sumdiff / 12.0;
 }
+/*PI Control System*/
 float PI_Control()
 {
 	/*P Variable*/
-	//100-((MotorSetRPM*100)/(MotorSetRPM+3))
 	float e = MotorSetRPM - MotorReadRPM;
 	/*I Variable*/
 	float eintegral = 0;
-	eintegral += e*0.00000001;
+	//10000us = 10ms -> Sample Time
+	eintegral += e*10000;
 	/*Output Variable*/
 	float y;
 	/*PI Control*/
 	vout = kp*e+ki*eintegral;
-	y = (vout*100)/22.5;
-	if(y>100){y=100;}
+	//Check vout is overflow or underflow*//
+	if(vout > MotorSetRPM<<1) vout-=((MotorSetRPM>>1)-vout);
+	if(vout < -(MotorSetRPM<<1)) vout+=((MotorSetRPM>>1)-vout);
+	/*Check PWM to not make it more than 100%*/
+	y = (vout*100.0)/22.5;
+	if(y>100)y=100;
 	return y;
 }
 
